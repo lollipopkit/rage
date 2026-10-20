@@ -1,5 +1,4 @@
-// Loads the library cargo built (`cargo build --release --manifest-path
-// rust/Cargo.toml`), the bridge's default `rust/target/release/`.
+// `dart test` runs hook/build.dart, which builds rust/ as the code asset.
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,8 +9,6 @@ const pass = 'correct horse battery staple';
 const fast = 10;
 
 void main() {
-  setUpAll(Rage.ensureInitialized);
-
   test('a passphrase round trip returns the plaintext, binary and armored', () async {
     for (final armor in [false, true]) {
       final ct = await Rage.encryptWithPassphrase(utf8.encode('hello'), pass, workFactor: fast, armor: armor);
@@ -74,5 +71,29 @@ void main() {
     await Rage.encryptFileWithPassphrase(plain.path, enc, pass, workFactor: fast);
     await Rage.decryptFileWithPassphrase(enc, out, pass);
     expect(File(out).readAsBytesSync(), plain.readAsBytesSync());
+  });
+
+  test('a key with a line break inside is refused, not split', () async {
+    final a = await Rage.generateX25519();
+    final b = await Rage.generateX25519();
+    await expectLater(
+      Rage.encryptToRecipients([1], ['${a.recipient}\n${b.recipient}']),
+      throwsA(isA<RageError>().having((e) => e.kind, 'kind', RageErrorKind.invalidKey)),
+    );
+  });
+
+  test('an empty passphrase is an invalid argument, not a crash', () async {
+    await expectLater(
+      Rage.encryptWithPassphrase([1], ''),
+      throwsA(isA<RageError>().having((e) => e.kind, 'kind', RageErrorKind.invalidArgument)),
+    );
+  });
+
+  test('many calls in parallel each get their own answer', () async {
+    final results = await Future.wait([
+      for (var i = 0; i < 16; i++)
+        Rage.encryptWithPassphrase([i], pass, workFactor: fast).then((ct) => Rage.decryptWithPassphrase(ct, pass)),
+    ]);
+    expect([for (final r in results) r.single], List.generate(16, (i) => i));
   });
 }

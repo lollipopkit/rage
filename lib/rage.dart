@@ -1,36 +1,29 @@
 /// age file encryption (<https://age-encryption.org/v1>) through the Rust
 /// `age` crate from [str4d/rage](https://github.com/str4d/rage).
 ///
-/// Every call is asynchronous and runs off the Dart isolate. Files written
-/// here are read by `age`, `rage` and every other age implementation, and the
-/// other way round.
+/// Every call is asynchronous: the work runs in a short-lived isolate, never
+/// on the caller's. Files written here are read by `age`, `rage` and every
+/// other age implementation, and the other way round.
 library;
 
+import 'dart:convert';
+import 'dart:ffi';
+import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show ExternalLibrary;
+import 'package:ffi/ffi.dart';
 
-import 'src/rust/api.dart' as api;
-import 'src/rust/frb_generated.dart';
+import 'src/errors.dart';
+import 'src/ffi.dart' as ffi;
 
-export 'src/rust/api.dart' show RageError, RageErrorKind, X25519KeyPair;
-export 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show ExternalLibrary;
+export 'src/errors.dart';
 
-/// age encryption. Loads the native library on first use.
+/// age encryption.
 abstract final class Rage {
-  static Future<void>? _init;
-
   /// The highest scrypt work factor (`log2(N)`) accepted when encrypting.
   /// age decryptors refuse a factor more than four above what takes about a
   /// second on the device reading it.
   static const maxEncryptWorkFactor = 22;
-
-  /// Loads the native library. Called by every method; call it yourself only
-  /// to load a [library] of your own (tests load the one cargo built).
-  static Future<void> ensureInitialized({ExternalLibrary? library}) =>
-      _init ??= RustLib.init(externalLibrary: library);
 
   /// Encrypts [plaintext] with [passphrase].
   ///
@@ -42,14 +35,13 @@ abstract final class Rage {
     String passphrase, {
     int? workFactor,
     bool armor = false,
-  }) async {
-    await ensureInitialized();
-    return api.encryptWithPassphrase(
-      plaintext: _bytes(plaintext),
-      passphrase: passphrase,
-      workFactor: workFactor,
-      armor: armor,
-    );
+  }) {
+    final data = _bytes(plaintext);
+    return Isolate.run(() => _run((a) {
+          final (p, pl) = _in(a, data);
+          final (s, sl) = _text(a, passphrase);
+          return ffi.encryptPassphrase(p, pl, s, sl, workFactor ?? -1, armor);
+        }));
   }
 
   /// Decrypts a passphrase-encrypted file, binary or armored.
@@ -61,26 +53,29 @@ abstract final class Rage {
     List<int> ciphertext,
     String passphrase, {
     int? maxWorkFactor,
-  }) async {
-    await ensureInitialized();
-    return api.decryptWithPassphrase(
-      ciphertext: _bytes(ciphertext),
-      passphrase: passphrase,
-      maxWorkFactor: maxWorkFactor,
-    );
+  }) {
+    final data = _bytes(ciphertext);
+    return Isolate.run(() => _run((a) {
+          final (c, cl) = _in(a, data);
+          final (s, sl) = _text(a, passphrase);
+          return ffi.decryptPassphrase(c, cl, s, sl, maxWorkFactor ?? -1);
+        }));
   }
 
   /// A new X25519 key pair.
-  static Future<api.X25519KeyPair> generateX25519() async {
-    await ensureInitialized();
-    return api.generateX25519();
+  static Future<X25519KeyPair> generateX25519() async {
+    final out = utf8.decode(await Isolate.run(() => _run((_) => ffi.generateX25519())));
+    final [identity, recipient] = out.split('\n');
+    return X25519KeyPair(identity: identity, recipient: recipient);
   }
 
   /// The public key (`age1…`) of [identity] (`AGE-SECRET-KEY-1…`).
-  static Future<String> recipientOf(String identity) async {
-    await ensureInitialized();
-    return api.x25519RecipientOf(identity: identity);
-  }
+  static Future<String> recipientOf(String identity) async => utf8.decode(
+        await Isolate.run(() => _run((a) {
+              final (i, il) = _text(a, identity);
+              return ffi.x25519RecipientOf(i, il);
+            })),
+      );
 
   /// Encrypts [plaintext] to [recipients] (`age1…`).
   static Future<Uint8List> encryptToRecipients(
@@ -88,12 +83,13 @@ abstract final class Rage {
     List<String> recipients, {
     bool armor = false,
   }) async {
-    await ensureInitialized();
-    return api.encryptToRecipients(
-      plaintext: _bytes(plaintext),
-      recipients: recipients,
-      armor: armor,
-    );
+    final data = _bytes(plaintext);
+    final keys = _keys(recipients);
+    return Isolate.run(() => _run((a) {
+          final (p, pl) = _in(a, data);
+          final (k, kl) = _text(a, keys);
+          return ffi.encryptRecipients(p, pl, k, kl, armor);
+        }));
   }
 
   /// Decrypts with any of [identities] (`AGE-SECRET-KEY-1…`).
@@ -101,11 +97,13 @@ abstract final class Rage {
     List<int> ciphertext,
     List<String> identities,
   ) async {
-    await ensureInitialized();
-    return api.decryptWithIdentities(
-      ciphertext: _bytes(ciphertext),
-      identities: identities,
-    );
+    final data = _bytes(ciphertext);
+    final keys = _keys(identities);
+    return Isolate.run(() => _run((a) {
+          final (c, cl) = _in(a, data);
+          final (k, kl) = _text(a, keys);
+          return ffi.decryptIdentities(c, cl, k, kl);
+        }));
   }
 
   /// [encryptWithPassphrase] from file to file, streaming. [output] is written
@@ -116,16 +114,13 @@ abstract final class Rage {
     String passphrase, {
     int? workFactor,
     bool armor = false,
-  }) async {
-    await ensureInitialized();
-    return api.encryptFileWithPassphrase(
-      input: input,
-      output: output,
-      passphrase: passphrase,
-      workFactor: workFactor,
-      armor: armor,
-    );
-  }
+  }) =>
+      Isolate.run(() => _run((a) {
+            final (i, il) = _text(a, input);
+            final (o, ol) = _text(a, output);
+            final (s, sl) = _text(a, passphrase);
+            return ffi.encryptFilePassphrase(i, il, o, ol, s, sl, workFactor ?? -1, armor);
+          }));
 
   /// [decryptWithPassphrase] from file to file, streaming. [output] is
   /// written whole or not at all, and owner-only on Unix.
@@ -134,15 +129,13 @@ abstract final class Rage {
     String output,
     String passphrase, {
     int? maxWorkFactor,
-  }) async {
-    await ensureInitialized();
-    return api.decryptFileWithPassphrase(
-      input: input,
-      output: output,
-      passphrase: passphrase,
-      maxWorkFactor: maxWorkFactor,
-    );
-  }
+  }) =>
+      Isolate.run(() => _run((a) {
+            final (i, il) = _text(a, input);
+            final (o, ol) = _text(a, output);
+            final (s, sl) = _text(a, passphrase);
+            return ffi.decryptFilePassphrase(i, il, o, ol, s, sl, maxWorkFactor ?? -1);
+          }));
 
   /// [encryptToRecipients] from file to file, streaming.
   static Future<void> encryptFileToRecipients(
@@ -151,13 +144,13 @@ abstract final class Rage {
     List<String> recipients, {
     bool armor = false,
   }) async {
-    await ensureInitialized();
-    return api.encryptFileToRecipients(
-      input: input,
-      output: output,
-      recipients: recipients,
-      armor: armor,
-    );
+    final keys = _keys(recipients);
+    return Isolate.run(() => _run((a) {
+          final (i, il) = _text(a, input);
+          final (o, ol) = _text(a, output);
+          final (k, kl) = _text(a, keys);
+          return ffi.encryptFileRecipients(i, il, o, ol, k, kl, armor);
+        }));
   }
 
   /// [decryptWithIdentities] from file to file, streaming. Owner-only on Unix.
@@ -166,14 +159,57 @@ abstract final class Rage {
     String output,
     List<String> identities,
   ) async {
-    await ensureInitialized();
-    return api.decryptFileWithIdentities(
-      input: input,
-      output: output,
-      identities: identities,
-    );
+    final keys = _keys(identities);
+    return Isolate.run(() => _run((a) {
+          final (i, il) = _text(a, input);
+          final (o, ol) = _text(a, output);
+          final (k, kl) = _text(a, keys);
+          return ffi.decryptFileIdentities(i, il, o, ol, k, kl);
+        }));
   }
 
-  static Uint8List _bytes(List<int> data) =>
-      data is Uint8List ? data : Uint8List.fromList(data);
+  static Uint8List _bytes(List<int> data) => data is Uint8List ? data : Uint8List.fromList(data);
+
+  /// Keys cross the boundary one per line. Surrounding whitespace is dropped
+  /// (a key read from a file ends with a line break); a line break inside a
+  /// key is refused rather than split into two keys.
+  static String _keys(List<String> keys) {
+    final trimmed = [for (final k in keys) k.trim()];
+    if (trimmed.any((k) => k.contains('\n') || k.contains('\r'))) {
+      throw const RageError(RageErrorKind.invalidKey, 'a key contains a line break');
+    }
+    return trimmed.join('\n');
+  }
+
+  static (Pointer<Uint8>, int) _in(Arena a, Uint8List data) {
+    if (data.isEmpty) return (nullptr, 0);
+    final p = a<Uint8>(data.length);
+    p.asTypedList(data.length).setAll(0, data);
+    return (p, data.length);
+  }
+
+  static (Pointer<Uint8>, int) _text(Arena a, String s) => _in(a, utf8.encode(s));
+
+  /// Calls into Rust with an arena for the inputs, copies the answer out,
+  /// releases Rust's buffers, and throws its error.
+  static Uint8List _run(ffi.RageResult Function(Arena) call) => using((a) {
+        final result = call(a);
+        try {
+          if (result.errorKind != 0) {
+            final message = result.message.len == 0
+                ? ''
+                : utf8.decode(result.message.ptr.asTypedList(result.message.len), allowMalformed: true);
+            throw RageError(
+              RageErrorKind.values[result.errorKind - 1],
+              message,
+              requiredWorkFactor: result.requiredWorkFactor < 0 ? null : result.requiredWorkFactor,
+            );
+          }
+          return result.data.len == 0
+              ? Uint8List(0)
+              : Uint8List.fromList(result.data.ptr.asTypedList(result.data.len));
+        } finally {
+          ffi.resultFree(result);
+        }
+      });
 }

@@ -6,7 +6,8 @@ Not affiliated with the rage project. This package is Dart bindings to its `age`
 
 - Passphrases (scrypt) and X25519 keys, binary or ASCII armor.
 - Interoperable: files written here open with `age`, `rage` and other age implementations, and the other way round. The tests read files written by the Go reference implementation.
-- Every call is asynchronous and runs off the Dart isolate.
+- Every call is asynchronous and runs in a short-lived isolate.
+- One small runtime dependency (`package:ffi`) and plain `dart:ffi`: no code-generation runtime to version-match with other packages.
 - File-to-file streaming for large files; the output is written whole or not at all, and a decrypted file is owner-only on Unix.
 - Built from source by a Dart build hook (native assets): no podspec, Swift package or Gradle plugin to add. Needs a Rust toolchain (rustup) where the app is built.
 
@@ -35,10 +36,10 @@ age derives the key with scrypt. When encrypting, the work factor (`log2(N)`) de
 
 ```sh
 cargo test --release --manifest-path rust/Cargo.toml
-cargo build --release --manifest-path rust/Cargo.toml   # dart test loads rust/target/release
-dart test
-flutter_rust_bridge_codegen generate                    # after changing rust/src/api (version 2.13.0)
+dart test        # runs hook/build.dart, which builds rust/ as the code asset
 ```
+
+`rust/src/api` is the safe Rust surface; `rust/src/ffi.rs` its C ABI, bound by `lib/src/ffi.dart`.
 
 `test/fixtures/go_*` are written by `tool/fixtures` (`go run . ../../test/fixtures`) with filippo.io/age.
 

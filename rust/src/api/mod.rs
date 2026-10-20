@@ -1,8 +1,7 @@
 //! age encryption (<https://age-encryption.org/v1>) through the `age` crate.
 //!
-//! Every function here takes and returns whole values or file paths: a Dart
-//! caller never holds a Rust object, so nothing has to be disposed. The work
-//! itself runs on flutter_rust_bridge's thread pool, off the Dart isolate.
+//! Every function here takes and returns whole values or file paths, so the C
+//! ABI (`crate::ffi`) never hands Dart a Rust object to dispose.
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -40,9 +39,11 @@ pub enum RageErrorKind {
     InvalidArgument,
     /// Reading or writing a file failed.
     Io,
+    /// A bug in rage: a Rust panic, caught at the C ABI.
+    Internal,
 }
 
-/// An error from `rage`. Thrown on the Dart side.
+/// An error from `rage`.
 #[derive(Debug, Clone)]
 pub struct RageError {
     pub kind: RageErrorKind,
@@ -52,7 +53,7 @@ pub struct RageError {
 }
 
 impl RageError {
-    fn new(kind: RageErrorKind, message: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: RageErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),

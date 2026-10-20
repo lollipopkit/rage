@@ -1,5 +1,5 @@
-//! The Rust `age` crate for Dart: `api` is what `flutter_rust_bridge_codegen`
-//! generates bindings from (`lib/src/rust/`, never edited by hand).
+//! The Rust `age` crate for Dart: `api` is the safe Rust surface (tested in
+//! `tests/`), `ffi` the C ABI `lib/src/ffi.dart` binds with `@Native`.
 
 pub mod api;
-mod frb_generated;
+pub mod ffi;

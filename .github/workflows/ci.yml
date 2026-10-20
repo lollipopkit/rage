@@ -24,8 +24,8 @@ jobs:
         working-directory: rust
       - run: cargo clippy --release --all-targets -- -D warnings
         working-directory: rust
-      - run: cargo build --release
-        working-directory: rust
       - run: dart pub get
       - run: dart analyze
       - run: dart test
+      - run: dart pub publish --dry-run
+        if: matrix.os == 'ubuntu-latest'
