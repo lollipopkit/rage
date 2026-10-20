@@ -1,0 +1,20 @@
+name: rage
+description: age file encryption (age-encryption.org) for Dart and Flutter, through the Rust age crate. Passphrases, X25519 keys, armor and streaming files.
+version: 0.1.0
+repository: https://github.com/lollipopkit/rage
+issue_tracker: https://github.com/lollipopkit/rage/issues
+topics: [age, encryption, cryptography, ffi]
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  # The bridge's runtime and its build hook must match the codegen version
+  # exactly (`flutter_rust_bridge_codegen 2.13.0`) and `rust/Cargo.toml`.
+  flutter_rust_bridge: 2.13.0
+  flutter_rust_bridge_hooks: 2.13.0
+  hooks: ^2.0.2
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.0

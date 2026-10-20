@@ -1,0 +1,25 @@
+[package]
+name = "rage_ffi"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "The Rust `age` crate bridged to Dart"
+publish = false
+
+[lib]
+name = "rage_ffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+age = { version = "0.11", features = ["armor"] }
+flutter_rust_bridge = "=2.13.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+[profile.release]
+lto = true
+codegen-units = 1
