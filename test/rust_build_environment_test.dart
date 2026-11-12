@@ -1,6 +1,6 @@
 import 'package:test/test.dart';
 
-import '../hook/rust_build_environment.dart';
+import '../hook/build.dart';
 
 void main() {
   const separator = '\u001f';
