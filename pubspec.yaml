@@ -1,6 +1,6 @@
 name: rage
 description: age file encryption (age-encryption.org) for Dart and Flutter, through the Rust age crate. Passphrases, X25519 keys, armor and streaming files.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/lollipopkit/rage
 issue_tracker: https://github.com/lollipopkit/rage/issues
 topics: [age, encryption, cryptography, ffi]
