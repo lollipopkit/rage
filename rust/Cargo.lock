@@ -796,6 +796,7 @@ name = "rage_ffi"
 version = "0.1.0"
 dependencies = [
  "age",
+ "rust-embed",
  "tempfile",
 ]
 

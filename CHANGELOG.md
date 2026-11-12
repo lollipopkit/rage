@@ -1,3 +1,7 @@
+## 0.1.1
+
+- Reproducible builds: the library no longer records the Cargo home or package path, nor the unpack time of the files `age` embeds.
+
 ## 0.1.0
 
 - age encryption through the Rust `age` crate 0.11: passphrases (scrypt), X25519 keys, ASCII armor, file-to-file streaming.
